@@ -93,8 +93,18 @@ Forwarded To: {forward_to}
         if original_message.get_content_type() == 'multipart/alternative':
             alternative_part = MIMEMultipart('alternative')
             for part in original_message.get_payload():
+                try:
+                    payload = part.get_payload(decode=True)
+                    charset = part.get_content_charset() or 'utf-8'
+                    if payload is not None:
+                        decoded_payload = payload.decode(charset, errors='replace')
+                    else:
+                        decoded_payload = ""
+                except Exception as e:
+                    logger.error(f"パートのデコード中にエラーが発生: {str(e)}")
+                    decoded_payload = ""
                 new_part = MIMEText(
-                    part.get_payload(decode=True).decode(part.get_content_charset() or 'utf-8', errors='replace'),
+                    decoded_payload,
                     _subtype=part.get_content_subtype(),
                     _charset=part.get_content_charset() or 'utf-8'
                 )
@@ -108,8 +118,18 @@ Forwarded To: {forward_to}
             for part in original_message.walk():
                 if part.get_content_maintype() == 'multipart':
                     continue  # ネストされた multipart をスキップ
+                try:
+                    payload = part.get_payload(decode=True)
+                    charset = part.get_content_charset() or 'utf-8'
+                    if payload is not None:
+                        decoded_payload = payload.decode(charset, errors='replace')
+                    else:
+                        decoded_payload = ""
+                except Exception as e:
+                    logger.error(f"パートのデコード中にエラーが発生: {str(e)}")
+                    decoded_payload = ""
                 new_part = MIMEText(
-                    part.get_payload(decode=True).decode(part.get_content_charset() or 'utf-8', errors='replace'),
+                    decoded_payload,
                     _subtype=part.get_content_subtype(),
                     _charset=part.get_content_charset() or 'utf-8'
                 )
