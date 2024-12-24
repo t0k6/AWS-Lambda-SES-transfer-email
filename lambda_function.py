@@ -56,14 +56,15 @@ def create_forwarded_message(original_message, original_recipient, forward_to):
 
     # 基本ヘッダーの設定
     msg['Subject'] = f"Fw: {original_message['Subject']}"
-    msg['From'] = os.environ.get('SENDER_EMAIL', 'no-reply@example.com')
+    msg['From'] = f"\"{decode_email_header(original_message['From'])}\" <{os.environ.get('SENDER_EMAIL', 'no-reply@example.com')}>"
+    msg['Reply-To'] = original_message['From']
     msg['To'] = forward_to
 
     # オリジナルメールのヘッダー情報を取得
-    important_header_keys = ['Subject', 'From', 'To', 'Cc', 'Date']
+    important_header_keys = ['Date', 'Subject', 'From', 'To', 'Cc']
     important_headers = "\n".join(
         f"{header}: {decode_email_header(original_message[header])}"
-        for header in original_message.keys() if header in important_header_keys
+        for header in important_header_keys if header in original_message
     )
     # original_headers = "\n".join(
     #     f"{header}: {decode_email_header(original_message[header])}"
