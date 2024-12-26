@@ -4,8 +4,11 @@ import boto3
 import email
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.mime.application import MIMEApplication
+from email.mime.message import MIMEMessage
 from email.header import decode_header
+from email import message_from_bytes, message_from_string
+from email.message import Message
+from email.errors import MessageParseError
 from botocore.exceptions import ClientError
 import logging
 
@@ -50,6 +53,78 @@ def decode_email_header(header_value):
             decoded_string += fragment
     return decoded_string
 
+def decode_parts(parent, message):
+    """メッセージを再帰的に処理"""
+    if message.get_content_type() == "message/rfc822":
+        # 添付ファイルの場合
+        logger.info(f"添付メッセージ: {message.get_content_type()} / {message.get_content_subtype()}")
+        try:
+            logger.info(f"message: {message}")
+            payload = message.get_payload(decode=False)  # 生データを取得
+            logger.info(f"payload: {payload}")
+            if not isinstance(payload, list):
+                payload = [payload]
+
+            for part in payload:
+                if isinstance(part, bytes):
+                    # バイナリデータをパース
+                    logger.info(f"binary part: {part}")
+                    inner_message = message_from_bytes(part)
+                elif isinstance(part, str):
+                    # 文字列データをパース
+                    logger.info(f"string part: {part}")
+                    inner_message = message_from_string(part)
+                elif isinstance(part, Message):
+                    # すでに Message オブジェクトの場合
+                    logger.info(f"message part: {part}")
+                    inner_message = part
+                else:
+                    # 未対応の型
+                    logger.warning(f"Unsupported part type: {type(part)}")
+                    continue
+
+                logger.info(f"inner_message: {inner_message}")
+                attachment = MIMEMessage(inner_message)
+                logger.info(f"attachment: {attachment}")
+
+                # ヘッダーの設定
+                filename = decode_email_header(message.get_param('filename') or message.get_param('name') or 'attached_message.eml')
+                attachment.add_header('Content-Disposition', 'attachment', filename=filename)
+                logger.info(f"attachment: {attachment}")
+
+                parent.attach(attachment)
+
+        except (MessageParseError, TypeError) as e:
+            print(f"Failed to process message/rfc822 attachment: {e}")
+
+    elif message.is_multipart():
+        # マルチパートの場合
+        logger.info(f"マルチパートメッセージ: {message.get_content_type()} / {message.get_content_subtype()}")
+        new_part = MIMEMultipart(message.get_content_subtype())
+        for part in message.get_payload():
+            decode_parts(new_part, part)  # 再帰的に添付
+        parent.attach(new_part)
+    else:
+        # シングルパートの場合
+        logger.info(f"シングルパートメッセージ: {message.get_content_type()} / {message.get_content_subtype()}")
+        try:
+            payload = message.get_payload(decode=True)
+            charset = message.get_content_charset() or 'utf-8'
+            subtype = message.get_content_subtype()
+            if payload:
+                decoded_payload = payload.decode(charset, errors='replace')
+            else:
+                decoded_payload = ""
+        except Exception as e:
+            logger.error(f"パートのデコード中にエラーが発生: {str(e)}")
+            decoded_payload = ""
+
+        decoded_part = MIMEText(decoded_payload, _subtype=subtype, _charset=charset)
+        for key, value in message.items():
+            decoded_part[key] = value
+
+        parent.attach(decoded_part)
+
 def create_forwarded_message(original_message, original_recipient, forward_to):
     """転送用の新規メールメッセージを作成"""
     msg = MIMEMultipart()
@@ -61,7 +136,7 @@ def create_forwarded_message(original_message, original_recipient, forward_to):
     msg['To'] = forward_to
 
     # オリジナルメールのヘッダー情報を取得
-    important_header_keys = ['Date', 'Subject', 'From', 'To', 'Cc']
+    important_header_keys = ['Date', 'Subject', 'From', 'Reply-To', 'To', 'Cc']
     important_headers = "\n".join(
         f"{header}: {decode_email_header(original_message[header])}"
         for header in important_header_keys if header in original_message
@@ -87,68 +162,7 @@ Forwarded To: {forward_to}
         if header in original_message:
             msg[f'X-Original-{header}'] = original_message[header]
 
-    # オリジナルのマルチパートメッセージをそのまま添付（ネスト）
-    if original_message.is_multipart():
-        # オリジナルが multipart/alternative の場合
-        if original_message.get_content_type() == 'multipart/alternative':
-            alternative_part = MIMEMultipart('alternative')
-            for part in original_message.get_payload():
-                try:
-                    payload = part.get_payload(decode=True)
-                    charset = part.get_content_charset() or 'utf-8'
-                    if payload is not None:
-                        decoded_payload = payload.decode(charset, errors='replace')
-                    else:
-                        decoded_payload = ""
-                except Exception as e:
-                    logger.error(f"パートのデコード中にエラーが発生: {str(e)}")
-                    decoded_payload = ""
-                new_part = MIMEText(
-                    decoded_payload,
-                    _subtype=part.get_content_subtype(),
-                    _charset=part.get_content_charset() or 'utf-8'
-                )
-                for key, value in part.items():
-                    new_part[key] = value
-                alternative_part.attach(new_part)
-            msg.attach(alternative_part)
-        # その他の multipart の場合
-        else:
-            nested_msg = MIMEMultipart(original_message.get_content_subtype())
-            for part in original_message.walk():
-                if part.get_content_maintype() == 'multipart':
-                    continue  # ネストされた multipart をスキップ
-                try:
-                    payload = part.get_payload(decode=True)
-                    charset = part.get_content_charset() or 'utf-8'
-                    if payload is not None:
-                        decoded_payload = payload.decode(charset, errors='replace')
-                    else:
-                        decoded_payload = ""
-                except Exception as e:
-                    logger.error(f"パートのデコード中にエラーが発生: {str(e)}")
-                    decoded_payload = ""
-                new_part = MIMEText(
-                    decoded_payload,
-                    _subtype=part.get_content_subtype(),
-                    _charset=part.get_content_charset() or 'utf-8'
-                )
-                for key, value in part.items():
-                    new_part[key] = value
-                nested_msg.attach(new_part)
-            msg.attach(nested_msg)
-    else:
-        # シングルパートの場合、直接添付
-        msg.attach(MIMEText(
-            original_message.get_payload(decode=True).decode(original_message.get_content_charset() or 'utf-8', errors='replace'),
-            _subtype=original_message.get_content_subtype(),
-            _charset=original_message.get_content_charset() or 'utf-8'
-        ))
-
-    # # オリジナルメールを添付
-    # original_part = MIMEApplication(original_message.as_string(), _subtype='octet-stream')
-    # original_part.add_header('Content-Disposition', 'attachment', filename='forwarded_message.eml')
-    # msg.attach(original_part)
+    decode_parts(msg, original_message)
 
     return msg
 
