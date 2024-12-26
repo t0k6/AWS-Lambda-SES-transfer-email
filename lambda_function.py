@@ -57,56 +57,56 @@ def decode_parts(parent, message):
     """メッセージを再帰的に処理"""
     if message.get_content_type() == "message/rfc822":
         # 添付ファイルの場合
-        logger.info(f"添付メッセージ: {message.get_content_type()} / {message.get_content_subtype()}")
+        logger.debug(f"添付メッセージ: {message.get_content_type()} / {message.get_content_subtype()}")
         try:
-            logger.info(f"message: {message}")
+            # logger.debug(f"message: {message}")
             payload = message.get_payload(decode=False)  # 生データを取得
-            logger.info(f"payload: {payload}")
+            # logger.debug(f"payload: {payload}")
             if not isinstance(payload, list):
                 payload = [payload]
 
             for part in payload:
                 if isinstance(part, bytes):
                     # バイナリデータをパース
-                    logger.info(f"binary part: {part}")
+                    # logger.debug(f"binary part: {part}")
                     inner_message = message_from_bytes(part)
                 elif isinstance(part, str):
                     # 文字列データをパース
-                    logger.info(f"string part: {part}")
+                    # logger.debug(f"string part: {part}")
                     inner_message = message_from_string(part)
                 elif isinstance(part, Message):
                     # すでに Message オブジェクトの場合
-                    logger.info(f"message part: {part}")
+                    # logger.debug(f"message part: {part}")
                     inner_message = part
                 else:
                     # 未対応の型
                     logger.warning(f"Unsupported part type: {type(part)}")
                     continue
 
-                logger.info(f"inner_message: {inner_message}")
+                # logger.debug(f"inner_message: {inner_message}")
                 attachment = MIMEMessage(inner_message)
-                logger.info(f"attachment: {attachment}")
+                # logger.debug(f"attachment: {attachment}")
 
                 # ヘッダーの設定
                 filename = decode_email_header(message.get_param('filename') or message.get_param('name') or 'attached_message.eml')
                 attachment.add_header('Content-Disposition', 'attachment', filename=filename)
-                logger.info(f"attachment: {attachment}")
+                # logger.debug(f"attachment: {attachment}")
 
                 parent.attach(attachment)
 
         except (MessageParseError, TypeError) as e:
-            print(f"Failed to process message/rfc822 attachment: {e}")
+            logger(f"Failed to process message/rfc822 attachment: {e}")
 
     elif message.is_multipart():
         # マルチパートの場合
-        logger.info(f"マルチパートメッセージ: {message.get_content_type()} / {message.get_content_subtype()}")
+        logger.debug(f"マルチパートメッセージ: {message.get_content_type()} / {message.get_content_subtype()}")
         new_part = MIMEMultipart(message.get_content_subtype())
         for part in message.get_payload():
             decode_parts(new_part, part)  # 再帰的に添付
         parent.attach(new_part)
     else:
         # シングルパートの場合
-        logger.info(f"シングルパートメッセージ: {message.get_content_type()} / {message.get_content_subtype()}")
+        logger.debug(f"シングルパートメッセージ: {message.get_content_type()} / {message.get_content_subtype()}")
         try:
             payload = message.get_payload(decode=True)
             charset = message.get_content_charset() or 'utf-8'
