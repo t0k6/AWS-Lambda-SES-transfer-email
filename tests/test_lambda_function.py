@@ -1,14 +1,14 @@
 import unittest
 from unittest.mock import patch
 import boto3
-from moto import mock_s3
+from moto import mock_aws
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.message import MIMEMessage
 from lambda_function import lambda_handler, create_forwarded_message
 
 class TestLambdaFunction(unittest.TestCase):
-    @mock_s3
+    @mock_aws
     def test_lambda_handler(self):
         # S3バケットをモックで作成
         s3 = boto3.client('s3')
