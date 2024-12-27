@@ -6,10 +6,6 @@ on:
   pull_request:
     branches: [ main ]
   workflow_dispatch:
-    inputs:
-      test_branch:
-        description: 'Branch to test'
-        required: false
 
 jobs:
   test:

@@ -1,6 +1,8 @@
 import unittest
 import boto3
 from moto import mock_aws
+from moto.ses.models import ses_backends
+from moto.core import DEFAULT_ACCOUNT_ID
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.message import MIMEMessage
@@ -22,7 +24,7 @@ class BaseAwsMockTest(unittest.TestCase):
         os.environ["S3_BUCKET"] = "test-bucket"
         os.environ["S3_PATH"]   = "test"
         os.environ["AWS_DEFAULT_REGION"] = "ap-northeast-1"
-        os.environ["MAIL_FORWARDS"] = '{"test@example.com": "forward@example.com", "test2@example.com": "forward2@example.com"}'
+        os.environ["MAIL_FORWARDS"] = '{"test@example.com": "forward@example.com", "test2@example.com": "forward2@example.com, forward3@example.com"}'
         os.environ["SENDER_EMAIL"] = "no-reply@example.com"
 
     def setUp(self):
@@ -39,29 +41,6 @@ class BaseAwsMockTest(unittest.TestCase):
             Bucket=os.environ['S3_BUCKET'],
             CreateBucketConfiguration={'LocationConstraint': os.environ['AWS_DEFAULT_REGION']}
         )
-
-        # --- モックされた SESクライアントで送信元アドレスを「認証済み」に ---
-        ses_client = boto3.client("ses")
-        ses_client.verify_email_identity(EmailAddress=os.environ["SENDER_EMAIL"])
-
-    def tearDown(self):
-        """
-        テストメソッド単位の後処理。必要に応じてモックをリセットしたり変数をクリアする。
-        """
-        # モックを停止
-        self.mock.stop()
-
-    @classmethod
-    def tearDownClass(cls):
-        """
-        クラス単位の後処理。必要に応じてモックをリセットしたり変数をクリアする。
-        """
-        pass
-
-class TestLambdaFunction(BaseAwsMockTest):
-
-    def test_lambda_handler(self):
-        """メール転送Lambda関数の呼び出しテスト"""
 
         # S3 上にテスト用のオブジェクトをアップロード
         s3_client = boto3.client("s3")
@@ -115,7 +94,30 @@ div></div></div></div></div></div></div></div></div></div></div></div></div=
 """
         )
 
-        # テストイベントを作成
+        # --- モックされた SESクライアントで送信元アドレスを「認証済み」に ---
+        ses_client = boto3.client("ses")
+        ses_client.verify_email_identity(EmailAddress=os.environ["SENDER_EMAIL"])
+
+    def tearDown(self):
+        """
+        テストメソッド単位の後処理。必要に応じてモックをリセットしたり変数をクリアする。
+        """
+        # モックを停止
+        self.mock.stop()
+
+    @classmethod
+    def tearDownClass(cls):
+        """
+        クラス単位の後処理。必要に応じてモックをリセットしたり変数をクリアする。
+        """
+        pass
+
+class TestLambdaFunction(BaseAwsMockTest):
+
+    def test_lambda_handler1(self):
+        """転送先が1つ設定されている場合のテスト"""
+
+        # 転送先が1つ設定されている場合のテストイベントを作成
         event = {
             'Records': [{
                 "eventSource": "aws:ses",
@@ -137,6 +139,47 @@ div></div></div></div></div></div></div></div></div></div></div></div></div=
         from lambda_function import lambda_handler
         response = lambda_handler(event, None)
         self.assertEqual(response['statusCode'], 200)
+
+        # -- 追加チェック: モック内部に保存された送信情報を取り出して、宛先を検証
+        backend = ses_backends[DEFAULT_ACCOUNT_ID][os.environ["AWS_DEFAULT_REGION"]]
+        self.assertEqual(len(backend.sent_messages), 1, "想定どおりメールが1件送信されていること")
+
+        message = backend.sent_messages[0]
+        self.assertIn(os.environ["SENDER_EMAIL"],message.source)
+        self.assertEqual(message.destinations, ["forward@example.com"])
+
+    def test_lambda_handler2(self):
+        """転送先が2つ設定されている場合のテスト"""
+
+        # 転送先が2つ設定されている場合のテストイベントを作成
+        event = {
+            "Records": [{
+                "eventSource": "aws:ses",
+                "eventVersion": "1.0",
+                "ses": {
+                    "mail": {
+                        "messageId": "abc"
+                    },
+                    "receipt": {
+                        "recipients": [
+                            "test2@example.com"
+                        ]
+                    }
+                }
+            }]
+        }
+
+        # Lambda関数をテスト
+        from lambda_function import lambda_handler
+        response = lambda_handler(event, None)
+        self.assertEqual(response['statusCode'], 200)
+
+        # -- 追加チェック: モック内部に保存された送信情報を取り出して、宛先を検証
+        backend = ses_backends[DEFAULT_ACCOUNT_ID][os.environ["AWS_DEFAULT_REGION"]]
+        self.assertEqual(len(backend.sent_messages), 1, "想定どおりメールが1件送信されていること")
+        message = backend.sent_messages[0]
+        self.assertIn(os.environ["SENDER_EMAIL"],message.source)
+        self.assertEqual(message.destinations, ["forward2@example.com", "forward3@example.com"])
 
 class TestCreateForwardedMessage(BaseAwsMockTest):
 
@@ -167,6 +210,22 @@ class TestCreateForwardedMessage(BaseAwsMockTest):
 
         self.assertIn("Fw: Test Subject", forwarded_message["Subject"])
         self.assertIn("forwarded@example.com", forwarded_message["To"])
+
+    def test_multiple_forward_addresses(self):
+        """複数転送先のテスト"""
+        self.forward_to = "forward1@example.com, forward2@example.com"
+        original_message = MIMEText("This is a test message.")
+        original_message["Subject"] = "Test Subject"
+        original_message["From"] = self.sender_email
+        original_message["To"] = self.original_recipient
+
+        from lambda_function import create_forwarded_message
+        forwarded_message = create_forwarded_message(
+            original_message, self.original_recipient, self.forward_to
+        )
+
+        self.assertIn("Fw: Test Subject", forwarded_message["Subject"])
+        self.assertIn("forward1@example.com, forward2@example.com", forwarded_message["To"])
 
     def test_message_with_attachment(self):
         """添付ファイル付きメッセージの転送テスト"""

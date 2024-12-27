@@ -200,10 +200,15 @@ def lambda_handler(event, context):
             # 転送用メールを作成
             forwarded_message = create_forwarded_message(original_message, original_recipient, forward_to)
 
+            # # 送信時にカンマで分割してリスト化
+            # forward_to_list = [addr.strip() for addr in forward_to.split(',')]
+
             # SESでメールを送信
             response = ses_client.send_raw_email(
                 Source=forwarded_message['From'],
-                Destinations=[forward_to],
+                # create_forwarded_message 関数で、MIMEヘッダ 'To' に指定されているので、重複指定を避ける
+                # MIMEヘッダでは指定していないアドレスを送信先に含める場合には、Destinations にリストで指定する
+                # Destinations=forward_to_list,
                 RawMessage={'Data': forwarded_message.as_string()}
             )
 
