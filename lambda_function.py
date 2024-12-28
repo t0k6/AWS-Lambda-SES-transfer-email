@@ -136,7 +136,7 @@ def create_forwarded_message(original_message, original_recipient, forward_to):
     msg['To'] = forward_to
 
     # オリジナルメールのヘッダー情報を取得
-    important_header_keys = ['Date', 'Subject', 'From', 'Reply-To', 'To', 'Cc']
+    important_header_keys = ['Date', 'Subject', 'From', 'Reply-To', 'To', 'Cc', 'Bcc']
     important_headers = "\n".join(
         f"{header}: {decode_email_header(original_message[header])}"
         for header in important_header_keys if header in original_message
@@ -158,7 +158,8 @@ Forwarded To: {forward_to}
     msg.attach(MIMEText(info_text, 'plain'))
 
     # 重要なヘッダーの転送
-    for header in ['Date', 'Message-ID', 'Subject', 'From', 'Reply-To', 'To', 'Cc']:
+    important_header_keys.append('Message-ID')
+    for header in important_header_keys:
         if header in original_message:
             msg[f'X-Original-{header}'] = original_message[header]
 
