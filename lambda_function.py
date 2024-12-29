@@ -6,6 +6,8 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.message import MIMEMessage
 from email.header import decode_header
+from email.header import Header
+from email.utils import formataddr
 from email import message_from_bytes, message_from_string
 from email.message import Message
 from email.errors import MessageParseError
@@ -131,7 +133,10 @@ def create_forwarded_message(original_message, original_recipient, forward_to):
 
     # 基本ヘッダーの設定
     msg['Subject'] = f"Fw: {original_message['Subject']}"
-    msg['From'] = f"\"{decode_email_header(original_message['From'])}\" <{os.environ.get('SENDER_EMAIL', 'no-reply@example.com')}>"
+    msg['From'] = formataddr((
+        str(Header(decode_email_header(original_message['From']), 'utf-8')),
+        os.environ.get('SENDER_EMAIL', 'no-reply@example.com')
+    ))
     msg['Reply-To'] = original_message['From']
     msg['To'] = forward_to
 
