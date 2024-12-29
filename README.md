@@ -1,2 +1,86 @@
-# AWS-Lambda-SES-transfer-email
-Transfer email Received by AWS SES using AWS Lambda with Python3.
+# AWS Lambda SES Email Transfer
+
+AWS Simple Email Service (SES) で受信したメールを、AWS Lambda を使用して別のメールアドレスに転送するスクリプトです。
+
+## 機能
+
+- SESで受信したメールを指定したメールアドレスに転送
+- 元のメールの形式（テキスト/HTML）を保持
+- 添付ファイルの転送対応
+- 複数の転送先設定が可能
+- オリジナルメールのヘッダー情報を保持
+
+## セットアップ
+
+### 前提条件
+
+- AWS アカウント
+- 設定済みの AWS SES ドメイン
+- 受信ルールによる S3 バケットへのメール保存
+
+### 必要な AWS サービス
+
+- AWS Lambda
+- AWS SES
+- AWS S3
+- IAM（適切な権限設定）
+
+### 環境変数の設定
+
+Lambda 関数に以下の環境変数を設定する必要があります：
+
+- `MAIL_FORWARDS`: 転送設定を JSON 形式で指定
+  ```json
+  {
+    "receive@example.com": "forward@example.com"
+  }
+  ```
+  - 転送元メールアドレスをkeyとし、転送先メールアドレスをvalueとして指定
+  - 複数の転送対象アドレスについて転送設定する場合は、複数のkey-valueを指定
+  - ひとつの転送対象アドレスについて複数の転送先アドレスを指定する場合は、転送先をカンマ区切りで指定
+- `SENDER_EMAIL`: 転送メールの送信元アドレス
+  - SESで送信可能なメールアドレス
+- `S3_BUCKET`: メールを一時保存する S3 バケット名
+- `S3_PATH`: S3 バケット内のパス
+
+### 必要な IAM 権限
+
+Lambda 実行ロールには以下の権限が必要です：
+
+- `ses:SendRawEmail`
+- `s3:GetObject`
+- CloudWatch Logs へのアクセス権限
+
+## デプロイ方法
+
+1. `lambda_function.py` をアップロード
+2. 環境変数を設定
+3. SES の受信ルールセットで S3 バケットへのメール保存に続いて Lambda 関数を呼び出す設定を追加
+
+## 使用方法
+
+1. SES で認証されたドメインのメールアドレスに対してメールを送信
+2. 環境変数 `MAIL_FORWARDS` で指定された転送先にメールが自動転送される
+
+## 制限事項
+
+- SES の制限に準拠
+- 添付ファイルのサイズ制限あり（Lambda の制限による）
+- 転送メールの送信元アドレスは SES で認証済みである必要あり
+
+## トラブルシューティング
+
+エラーが発生した場合は、CloudWatch Logs で詳細を確認できます。主なエラーケース：
+
+- 環境変数の設定ミス
+- IAM 権限の不足
+- メールサイズの超過
+- SES の制限超過
+
+## ライセンス
+
+このプロジェクトは MIT ライセンスの下で公開されています。詳細は [LICENSE](LICENSE) ファイルを参照してください。
+
+## 貢献
+
+Issue や Pull Request は歓迎します。大きな変更を加える場合は、まず Issue で提案してください。
