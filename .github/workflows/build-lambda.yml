@@ -1,0 +1,45 @@
+name: Build AWS Lambda Package
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # リポジトリをチェックアウト
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # Python環境をセットアップ
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.12
+
+      # 必要なパッケージをインストール
+      - name: Install dependencies
+        run: |
+          mkdir -p lambda_package
+          pip install -r requirements.txt -t lambda_package
+
+      # Lambdaコードをコピー
+      - name: Copy Lambda function
+        run: |
+          cp lambda_function.py lambda_package/
+
+      # パッケージを圧縮
+      - name: Zip Lambda package
+        run: |
+          cd lambda_package
+          zip -r ../lambda_package.zip .
+
+      # ZIPファイルを成果物として保存
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lambda-package
+          path: lambda_package.zip
