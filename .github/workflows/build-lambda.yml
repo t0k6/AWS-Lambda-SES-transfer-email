@@ -31,15 +31,15 @@ jobs:
         run: |
           cp lambda_function.py lambda_package/
 
-      # パッケージを圧縮
-      - name: Zip Lambda package
-        run: |
-          cd lambda_package
-          zip -r ../lambda_package.zip .
+      # # パッケージを圧縮
+      # - name: Zip Lambda package
+      #   run: |
+      #     cd lambda_package
+      #     zip -r ../lambda_package.zip *
 
       # ZIPファイルを成果物として保存
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: lambda-package
-          path: lambda_package.zip
+          name: lambda_package
+          path: lambda_package
