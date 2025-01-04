@@ -1,6 +1,7 @@
 import json
 import os
 import boto3
+import chardet
 import email
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -35,7 +36,9 @@ def get_message_from_s3(bucket, key):
     """S3からメールデータを取得"""
     try:
         response = s3_client.get_object(Bucket=bucket, Key=key)
-        return response['Body'].read().decode('utf-8')
+        raw_data = response['Body'].read()
+        detected_encoding = chardet.detect(raw_data)['encoding']
+        return raw_data.decode(detected_encoding, errors='replace')
     except ClientError as e:
         logger.error(f"S3からのメール取得に失敗: {str(e)}")
         raise
