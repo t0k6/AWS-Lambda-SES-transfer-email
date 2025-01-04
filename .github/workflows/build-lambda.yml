@@ -39,7 +39,7 @@ jobs:
 
       # ZIPファイルを成果物として保存
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: lambda-package
           path: lambda_package.zip
