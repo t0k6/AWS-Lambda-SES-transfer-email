@@ -24,7 +24,12 @@ s3_client = boto3.client('s3')
 ses_client = boto3.client('ses')
 
 def get_email_forwards():
-    """環境変数からメール転送設定を取得"""
+    """環境変数からメール転送設定を取得
+    JSON形式の文字列をパースして辞書型に変換する。
+    エラーハンドリングとして、JSONDecodeError をキャッチし、エラーログを出力する。
+    * Input Value: 環境変数 MAIL_FORWARDS
+    * Output Value: 辞書型(メールアドレスと転送先の対応表)
+    """
     forwards = os.environ.get('MAIL_FORWARDS', '{}')
     try:
         return json.loads(forwards)
@@ -33,7 +38,12 @@ def get_email_forwards():
         return {}
 
 def get_message_from_s3(bucket, key):
-    """S3からメールデータを取得"""
+    """S3からメールデータを取得
+    S3クライアントを使用して指定されたバケットとキーからオブジェクトを取得し、文字列に変換する。
+    エラーハンドリングとして、ClientError をキャッチし、エラーログを出力する。
+    * Input Value: バケット名、キー
+    * Output Value: メールデータ（文字列）
+    """
     try:
         response = s3_client.get_object(Bucket=bucket, Key=key)
         raw_data = response['Body'].read()
@@ -44,7 +54,12 @@ def get_message_from_s3(bucket, key):
         raise
 
 def decode_email_header(header_value):
-    """メールヘッダーをデコード"""
+    """メールヘッダーをデコード
+    decode_header を使用してメールヘッダーをデコードする。
+    エンコードが指定されていない場合はUTF-8をデフォルトとして使用する。
+    * Input Value: メールヘッダー
+    * Output Value: デコードされたメールヘッダー（文字列）
+    """
     if not header_value:
         return ""  # 空のヘッダーには空文字を返す
     decoded_fragments = decode_header(header_value)
@@ -59,7 +74,12 @@ def decode_email_header(header_value):
     return decoded_string
 
 def decode_parts(parent, message):
-    """メッセージを再帰的に処理"""
+    """メッセージを再帰的に処理
+    multipartメッセージと添付ファイル（message/rfc822）を処理し、
+    メッセージを分解してMIMEMultipartオブジェクトに組み込む。
+    * Input Value: 親MIMEMessageオブジェクト、メールメッセージ
+    * Output Value: 処理されたMIMEMessageオブジェクト
+    """
     if message.get_content_type() == "message/rfc822":
         # 添付ファイルの場合
         logger.debug(f"添付メッセージ: {message.get_content_type()} / {message.get_content_subtype()}")
@@ -131,7 +151,12 @@ def decode_parts(parent, message):
         parent.attach(decoded_part)
 
 def create_forwarded_message(original_message, original_recipient, forward_to):
-    """転送用の新規メールメッセージを作成"""
+    """転送用の新規メールメッセージを作成
+    オリジナルメッセージの情報と転送先アドレスを受け取り、転送メールを作成する。
+    オリジナルメッセージのヘッダーの一部を転送メールにコピーする。
+    * Input Value: オリジナルメッセージ、受信者アドレス、転送先アドレス
+    * Output Value: 転送メール（MIMEMultipartオブジェクト）
+    """
     msg = MIMEMultipart()
 
     # 基本ヘッダーの設定
@@ -176,10 +201,15 @@ Forwarded To: {forward_to}
     return msg
 
 def lambda_handler(event, context):
-    """Lambda関数のメインハンドラー"""
+    """Lambda関数のメインハンドラー
+    SESイベントを処理し、転送先設定から転送判定と転送先アドレスの設定を行う。
+    S3からメールデータを取得し、SESでメールを転送する。
+    * Input Value: Lambdaイベント
+    * Output Value: Lambdaレスポンス（JSON形式）
+    """
     try:
         for record in event['Records']:
-            # S3イベントからメール情報を取得
+            # SESイベントからメール情報を取得
             ses_notification = record['ses']
             receipt = ses_notification['receipt']
             mail = ses_notification['mail']
@@ -187,7 +217,7 @@ def lambda_handler(event, context):
             # メールの受信者アドレスを取得
             original_recipient = receipt['recipients'][0]
 
-            # 転送設定を確認
+            # 転送先設定を確認
             forwards = get_email_forwards()
             if original_recipient not in forwards:
                 logger.warning(f"転送先が設定されていないアドレス: {original_recipient}")
@@ -195,7 +225,6 @@ def lambda_handler(event, context):
                     'statusCode': 200,
                     'body': json.dumps('No forward address configured')
                 }
-
             forward_to = forwards[original_recipient]
 
             # S3からメールデータを取得
